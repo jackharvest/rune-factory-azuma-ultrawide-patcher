@@ -1,8 +1,22 @@
-# Rune Factory: Guardians of Azuma & UE5 Ultrawide/Widescreen Patcher
+# 🌸 Rune Factory: Guardians of Azuma & UE5 Ultrawide Patcher
 
-An interactive, lightweight, cross-platform Python tool designed to patch the compiled hardcoded 16:9 aspect ratio locks in **Unreal Engine 5** executable binaries (specifically tested and verified for **Rune Factory: Guardians of Azuma**'s `Game-Win64-Shipping.exe`).
+![Python Version](https://img.shields.io/badge/python-3.7%2B-blue.svg)
+![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-This tool works natively across **Windows**, **Linux** (native/Steam/Proton/Bottles), and **macOS** (Crossover/Whisky).
+An interactive, lightweight, cross-platform Python tool designed to patch the compiled hardcoded 16:9 aspect ratio locks in **Unreal Engine 5** executable binaries. Specifically tested and verified for **Rune Factory: Guardians of Azuma**.
+
+---
+
+## 📖 Table of Contents
+- [🔍 The Widescreen Issue](#-the-widescreen-issue-explained)
+- [✨ Features](#-features)
+- [🚀 How to Use](#-how-to-use)
+  - [💻 Windows](#-1-windows-installation--usage)
+  - [🐧 Linux](#-2-linux-steam--proton--bottles-installation--usage)
+  - [🍎 macOS](#-3-macos-crossover--whisky-installation--usage)
+- [🛠️ Technical Details](#-technical-details)
+- [⚖️ License](#-license)
 
 ---
 
@@ -91,3 +105,9 @@ It replaces all found instances with the float32 byte array of your chosen aspec
 - Or your custom dynamically computed ratio.
 
 Finally, it triggers system commands to set the executable file permissions to **Read-Only** (`0o444`), which is a required step because Unreal Engine games often attempt to re-validate and overwrite binary file metadata during startup.
+
+---
+
+## ⚖️ License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
