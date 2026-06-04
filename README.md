@@ -1,11 +1,11 @@
 # 🌸 Rune Factory: Guardians of Azuma — UE5 Ultrawide Patcher
 
-![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)
 ![Python Version](https://img.shields.io/badge/python-3.7%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-A lightweight, cross-platform Python tool that patches the hardcoded 16:9 aspect ratio lock in **Rune Factory: Guardians of Azuma** (and compatible Unreal Engine 5 games) and fixes a related ini bug that causes unintended supersampling on ultrawide monitors.
+A lightweight, cross-platform Python tool that patches the hardcoded 16:9 aspect ratio lock in **Rune Factory: Guardians of Azuma** (and compatible Unreal Engine 5 games), fixes a related ini bug that causes unintended supersampling on ultrawide monitors, and silences the animated letterbox transition that shops (blacksmith, cooking, carpenter, etc.) trigger when their UI opens.
 
 ---
 
@@ -132,6 +132,22 @@ In the v1.1 analysis, **12 total occurrences** of the 16:9 constant were identif
 3. **Resolution selection** (occurrences 8–11): Code that builds the list of valid render resolutions constrained to the target aspect ratio. These are responsible for the supersampling side-effect described above.
 4. **Static data table** (occurrence 12, `.rdata` section): A pre-existing constant in a float lookup table.
 
+### Shop Letterbox Bypass (v1.2)
+
+When the blacksmith, cooking bench, carpenter, medicine, or reinforce UI opens, the game fires an `EAppCommonNotificationType` event that triggers a Blueprint call to `SetLetterboxAspectRatio(1.7778)`. This queues an animated transition of the camera's aspect ratio field from 21:9 back to 16:9, producing the "black bars creeping in from the sides" effect.
+
+The native C++ function that processes this call contains:
+```
+ucomiss  xmm0, [rdi+0x2C8]   ; compare new ratio to current
+je       skip                 ; if same, skip the write
+movss    [rdi+0x2C8], xmm0   ; write new target ratio  ← this triggers the transition
+call     notification_func
+skip:
+ret
+```
+
+Patching the `je` (opcode `0x74`) at file offset `0x03736A43` to an unconditional `jmp` (opcode `0xEB`) makes the function always take the skip branch — the write never happens, no transition is queued, and all shop UIs stay at 21:9 throughout.
+
 ### GameUserSettings.ini Fix
 
 After patching, the engine's resolution selector (occurrences 8–11) can pick a supersampled render target on the first launch. This manifests as `sg.ResolutionQuality=0` and inflated `ResolutionSizeX/Y` values in `GameUserSettings.ini` (for example, 4644×1944 instead of 3440×1440 on a 21:9 display).
@@ -148,7 +164,7 @@ The script searches all common Wine/Proton/Bottles/CrossOver install paths autom
 
 ## ⚠️ Known Limitations
 
-- **World Map skew:** The in-game world map may appear skewed or have incorrect icon placement at ultrawide resolutions. This is a separate issue from the main viewport patch. Several in-game UI screens (such as the blacksmith and other shops) correctly transition to a centered 16:9 view when opened — the map does not use this same transition. A fix for the map is under investigation.
+- **World Map skew:** The in-game world map may appear skewed or have incorrect icon placement at ultrawide resolutions. The map never calls the letterbox system, so there is no 16:9 transition to intercept — its coordinate math is authored for 16:9 and runs at 21:9. A fix is under investigation.
 
 - **Save compatibility:** No known issues. Save data is unrelated to the executable patch.
 
@@ -157,6 +173,10 @@ The script searches all common Wine/Proton/Bottles/CrossOver install paths autom
 ---
 
 ## 📋 Changelog
+
+### v1.2.0
+- **New:** Letterbox bypass patch — shops (blacksmith, cooking, carpenter, medicine, reinforce) no longer animate black bars when their UI opens. A single-byte patch (`je` → `jmp` at file offset `0x03736A43`) makes `SetLetterboxAspectRatio` a permanent no-op, so all shop UI renders at the same 21:9 ratio as the rest of the game.
+- **Docs:** Technical Details updated; Known Limitations updated to reflect that the blacksmith letterbox is now fixed.
 
 ### v1.1.0
 - **New:** Automatically locates and repairs `GameUserSettings.ini` after patching, fixing an unintended 135% supersampling render resolution.

@@ -28,6 +28,13 @@ DESCRIPTION:
   Bottles/CrossOver paths automatically and resets the resolution quality
   setting to native (100%).
 
+  v1.2.0 ALSO patches the shop letterbox transition system. When entering
+  blacksmith / cooking / carpenter / medicine / reinforce dialogues the game
+  previously called SetLetterboxAspectRatio(1.7778) which animated black bars
+  in from the sides. A single-byte patch to the native setter (file offset
+  0x03736A43, 'je' -> 'jmp') makes that write a permanent no-op, so all shop
+  UI renders at the same 21:9 ratio as the rest of the game.
+
 HOW TO USE:
   1. Place this script directly in your game folder next to the executable:
      [GameInstallDir]/game/Game/Binaries/Win64/
@@ -48,7 +55,7 @@ import shutil
 import struct
 import platform
 
-VERSION    = "1.1.0"
+VERSION    = "1.2.0"
 TARGET_EXE = "Game-Win64-Shipping.exe"
 BACKUP_EXT = ".bak"
 GAME_NAME  = "Rune Factory Guardians of Azuma"
@@ -132,6 +139,25 @@ def patch_exe(exe_path, target_ratio, ratio_name, display_width, display_height)
     if total == 0:
         print("[-] No 16:9 patterns found. The exe may already be patched or is incompatible.")
         return
+
+    # --- Step 3b: letterbox bypass patch ---
+    # The game's SetLetterboxAspectRatio native setter contains a compare-then-
+    # write sequence:  ucomiss xmm0,[rdi+0x2C8]  /  je skip  /  movss [rdi+0x2C8],xmm0
+    # Changing the 'je' (0x74) to unconditional 'jmp' (0xEB) at offset 0x03736A43
+    # makes the setter always skip the write, preventing shop dialogues (blacksmith,
+    # cooking, carpenter, medicine, reinforce) from transitioning to 16:9 letterbox.
+    LBBOX_OFFSET   = 0x03736A43
+    LBBOX_EXPECTED = 0x74
+    LBBOX_PATCH    = 0xEB
+
+    if LBBOX_OFFSET < len(data) and data[LBBOX_OFFSET] == LBBOX_EXPECTED:
+        data[LBBOX_OFFSET] = LBBOX_PATCH
+        print("[+] Letterbox bypass patch applied (shop 16:9 transitions disabled).")
+    elif LBBOX_OFFSET < len(data):
+        print(f"[!] Letterbox patch: unexpected byte {hex(data[LBBOX_OFFSET])} at "
+              f"offset {hex(LBBOX_OFFSET)} — skipping (exe may have been updated).")
+    else:
+        print("[!] Letterbox patch offset out of range — skipping.")
 
     # --- Step 4: write and lock ---
     try:
