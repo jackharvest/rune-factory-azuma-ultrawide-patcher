@@ -28,12 +28,13 @@ DESCRIPTION:
   Bottles/CrossOver paths automatically and resets the resolution quality
   setting to native (100%).
 
-  v1.2.0 ALSO patches the shop letterbox transition system. When entering
-  blacksmith / cooking / carpenter / medicine / reinforce dialogues the game
-  previously called SetLetterboxAspectRatio(1.7778) which animated black bars
-  in from the sides. A single-byte patch to the native setter (file offset
-  0x03736A43, 'je' -> 'jmp') makes that write a permanent no-op, so all shop
-  UI renders at the same 21:9 ratio as the rest of the game.
+  v1.2.0 ALSO patches the camera animation tick to suppress shop letterbox
+  transitions. When entering blacksmith / cooking / carpenter / medicine /
+  reinforce dialogues the game runs a keyframe-driven animation that reduces
+  the camera's aspect ratio from 2.3889 (21:9) to 1.7778 (16:9). An 18-byte
+  patch to the tick's final write (file offset 0x033AE5CB) inserts a maxss
+  clamp so the camera ratio can never drop below 2.3889, making the animation
+  a visual no-op.
 
 HOW TO USE:
   1. Place this script directly in your game folder next to the executable:
@@ -140,24 +141,37 @@ def patch_exe(exe_path, target_ratio, ratio_name, display_width, display_height)
         print("[-] No 16:9 patterns found. The exe may already be patched or is incompatible.")
         return
 
-    # --- Step 3b: letterbox bypass patch ---
-    # The game's SetLetterboxAspectRatio native setter contains a compare-then-
-    # write sequence:  ucomiss xmm0,[rdi+0x2C8]  /  je skip  /  movss [rdi+0x2C8],xmm0
-    # Changing the 'je' (0x74) to unconditional 'jmp' (0xEB) at offset 0x03736A43
-    # makes the setter always skip the write, preventing shop dialogues (blacksmith,
-    # cooking, carpenter, medicine, reinforce) from transitioning to 16:9 letterbox.
-    LBBOX_OFFSET   = 0x03736A43
-    LBBOX_EXPECTED = 0x74
-    LBBOX_PATCH    = 0xEB
+    # --- Step 3b: animation tick clamp patch ---
+    # The shop letterbox animation is driven by a per-frame camera tick that writes
+    # the active camera aspect ratio to [rbx+0x24C].  The tick can reduce this value
+    # from 2.3889 (21:9) down to 1.7778 (16:9) when the blacksmith / cooking /
+    # carpenter / medicine / reinforce UI opens, causing animated black bars.
+    #
+    # Original 18 bytes at 0x033AE5CB:
+    #   movss [rbx+0x24c], xmm0        ; write computed ratio (may be < 2.3889)
+    #   jbe   skip                     ; if floor constraint <= 0, skip override
+    #   movss [rbx+0x24c], xmm1        ; override with floor constraint (1.7778)
+    #
+    # Replacement:
+    #   maxss xmm0, [rip+0x3FA6311]    ; clamp xmm0 to >= 2.3889 (from .rdata)
+    #   movss [rbx+0x24c], xmm0        ; write clamped ratio
+    #   nop; nop
+    #
+    # Result: the camera ratio can never drop below 2.3889 regardless of what the
+    # animation system computes — no bars ever appear.
+    CLAMP_OFFSET   = 0x033AE5CB
+    CLAMP_EXPECTED = bytes.fromhex("f30f11834c0200007608f30f118b4c020000")
+    CLAMP_PATCH    = bytes.fromhex("f30f5f051163fa03f30f11834c0200009090")
 
-    if LBBOX_OFFSET < len(data) and data[LBBOX_OFFSET] == LBBOX_EXPECTED:
-        data[LBBOX_OFFSET] = LBBOX_PATCH
-        print("[+] Letterbox bypass patch applied (shop 16:9 transitions disabled).")
-    elif LBBOX_OFFSET < len(data):
-        print(f"[!] Letterbox patch: unexpected byte {hex(data[LBBOX_OFFSET])} at "
-              f"offset {hex(LBBOX_OFFSET)} — skipping (exe may have been updated).")
+    slice_end = CLAMP_OFFSET + len(CLAMP_EXPECTED)
+    if slice_end <= len(data) and data[CLAMP_OFFSET:slice_end] == CLAMP_EXPECTED:
+        data[CLAMP_OFFSET:slice_end] = CLAMP_PATCH
+        print("[+] Animation tick clamp patch applied (shop letterbox suppressed).")
+    elif slice_end <= len(data):
+        print(f"[!] Tick clamp patch: unexpected bytes at offset {hex(CLAMP_OFFSET)} "
+              f"— skipping (exe may have been updated).")
     else:
-        print("[!] Letterbox patch offset out of range — skipping.")
+        print("[!] Tick clamp patch offset out of range — skipping.")
 
     # --- Step 4: write and lock ---
     try:

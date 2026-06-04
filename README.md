@@ -134,19 +134,21 @@ In the v1.1 analysis, **12 total occurrences** of the 16:9 constant were identif
 
 ### Shop Letterbox Bypass (v1.2)
 
-When the blacksmith, cooking bench, carpenter, medicine, or reinforce UI opens, the game fires an `EAppCommonNotificationType` event that triggers a Blueprint call to `SetLetterboxAspectRatio(1.7778)`. This queues an animated transition of the camera's aspect ratio field from 21:9 back to 16:9, producing the "black bars creeping in from the sides" effect.
+When the blacksmith, cooking bench, carpenter, medicine, or reinforce UI opens, the game fires an `EAppCommonNotificationType` event that triggers a keyframe-driven camera animation. This animation gradually reduces a scale factor from 1.0 → 0.744, and a per-frame tick multiplies that by the screen aspect ratio and writes the result to the camera's active ratio field (`[rbx+0x24C]`):
 
-The native C++ function that processes this call contains:
 ```
-ucomiss  xmm0, [rdi+0x2C8]   ; compare new ratio to current
-je       skip                 ; if same, skip the write
-movss    [rdi+0x2C8], xmm0   ; write new target ratio  ← this triggers the transition
-call     notification_func
-skip:
-ret
+; original tick ending (VA 0x1433AEFCB, file 0x033AE5CB):
+movss [rbx+0x24c], xmm0     ; write scale * screen_ratio (decreasing: 2.3889 → 1.7778)
+jbe   skip                  ; if floor constraint ≤ 0, skip
+movss [rbx+0x24c], xmm1     ; override with floor (1.7778)  ← the "black bars" value
+
+; patched replacement (18 bytes):
+maxss xmm0, [rip+const_21:9] ; clamp xmm0 to >= 2.3889
+movss [rbx+0x24c], xmm0      ; write clamped value (never below 2.3889)
+nop; nop
 ```
 
-Patching the `je` (opcode `0x74`) at file offset `0x03736A43` to an unconditional `jmp` (opcode `0xEB`) makes the function always take the skip branch — the write never happens, no transition is queued, and all shop UIs stay at 21:9 throughout.
+The `maxss` clamps to the 21:9 constant already stored in `.rdata` (from occurrence 12 of the float replacement). The animation still runs internally but the camera ratio is never allowed to fall below 2.3889, so no bars are visible.
 
 ### GameUserSettings.ini Fix
 
@@ -175,8 +177,8 @@ The script searches all common Wine/Proton/Bottles/CrossOver install paths autom
 ## 📋 Changelog
 
 ### v1.2.0
-- **New:** Letterbox bypass patch — shops (blacksmith, cooking, carpenter, medicine, reinforce) no longer animate black bars when their UI opens. A single-byte patch (`je` → `jmp` at file offset `0x03736A43`) makes `SetLetterboxAspectRatio` a permanent no-op, so all shop UI renders at the same 21:9 ratio as the rest of the game.
-- **Docs:** Technical Details updated; Known Limitations updated to reflect that the blacksmith letterbox is now fixed.
+- **New:** Animation tick clamp — shops (blacksmith, cooking, carpenter, medicine, reinforce) no longer animate black bars when their UI opens. An 18-byte patch to the camera's per-frame tick (`maxss` clamp at file offset `0x033AE5CB`) ensures the camera ratio can never drop below 2.3889 regardless of the keyframe animation data, making all shop letterbox transitions a visual no-op.
+- **Docs:** Technical Details updated with full animation system analysis; Known Limitations updated.
 
 ### v1.1.0
 - **New:** Automatically locates and repairs `GameUserSettings.ini` after patching, fixing an unintended 135% supersampling render resolution.
